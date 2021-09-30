@@ -6,7 +6,7 @@
 # Random crop??
 import tensorflow as tf
 
-l2 = tf.keras.regularizers.l2(5e-4)
+l2 = tf.keras.regularizers.l2(5e-7)
 
 def block(inputs, filters=256, output_strides=16):
 
@@ -15,8 +15,8 @@ def block(inputs, filters=256, output_strides=16):
     if output_strides == 8:
         dilated_rate = [2*rate for rate in dilated_rate]
 
-    conv_1x1 = tf.keras.layers.DepthwiseConv2D(kernel_size=1, use_bias=True,
-                                               depthwise_regularizer=l2)(inputs)
+    conv_1x1 = tf.keras.layers.Conv2D(filters=256, kernel_size=1, use_bias=True,
+                               kernel_regularizer=l2)(inputs)
     conv_1x1 = tf.keras.layers.BatchNormalization()(conv_1x1)
     conv_1x1 = tf.keras.layers.ReLU()(conv_1x1)
 
@@ -46,8 +46,8 @@ def block(inputs, filters=256, output_strides=16):
     image_features = tf.image.resize(image_features, input_size)
 
     h = tf.concat([conv_1x1, conv_3x3_1, conv_3x3_2, conv_3x3_3, image_features], -1)
-    h = tf.keras.layers.DepthwiseConv2D(kernel_size=1, use_bias=True,
-                                        depthwise_regularizer=l2)(h)
+    h = tf.keras.layers.Conv2D(filters=256, kernel_size=1, use_bias=True,
+                               kernel_regularizer=l2)(h)
     h = tf.keras.layers.BatchNormalization()(h)
     h = tf.keras.layers.ReLU()(h)
 
@@ -55,7 +55,7 @@ def block(inputs, filters=256, output_strides=16):
 
 def Deep_edge_network(input_shape=(513, 513, 3), num_classes=124):
 
-    model = tf.keras.applications.ResNet50V2(input_shape=(513, 513, 3), include_top=False)
+    model = tf.keras.applications.ResNet50V2(input_shape=input_shape, include_top=False)
 
     output = model.output
     decode_outputs = model.get_layer("conv2_block1_1_conv").output
