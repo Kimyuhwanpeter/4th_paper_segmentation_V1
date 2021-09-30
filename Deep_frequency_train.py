@@ -1,6 +1,6 @@
 # -*- coding:utf-8 -*-
 from modified_deeplab_V3 import *
-from cal_measurement import MIOU
+from cal_measurement import Measurement
 from random import random, shuffle
 
 import matplotlib.pyplot as plt
@@ -10,27 +10,29 @@ import os
 
 FLAGS = easydict.EasyDict({"img_size": 513,
                            
-                           "label_path": "D:/[1]DB/[5]4th_paper_DB/Fruit/MinneApple/detection/train/masks/",
+                           "label_path": "D:/[1]DB/[5]4th_paper_DB/other/CamVidtwofold_gray/CamVidtwofold_gray/train/labels/",
                            
-                           "image_path": "D:/[1]DB/[5]4th_paper_DB/Fruit/MinneApple/detection/train/images/",
+                           "image_path": "D:/[1]DB/[5]4th_paper_DB/other/CamVidtwofold_gray/CamVidtwofold_gray/train/images/",
                            
                            "pre_checkpoint": False,
                            
                            "pre_checkpoint_path": "",
                            
-                           "lr": 0.0001,
+                           "lr": 1e-6,
                            
-                           "epochs": 50,
+                           "epochs": 200,
 
-                           "total_classes": 124,
+                           "total_classes": 12,
 
-                           "ignore_label": 0,
+                           "ignore_label": 11,
 
                            "batch_size": 2,
 
                            "train": True})
 
 optim = tf.keras.optimizers.Adam(FLAGS.lr)
+# pretrained Î™®Îç∏ÏùÑ ÏÇ¨Ïö©Ìï¥Î≥¥Ïûê
+# https://github.com/tensorflow/models/blob/master/research/deeplab/g3doc/model_zoo.md
 
 def tr_func(image_list, label_list):
 
@@ -41,12 +43,12 @@ def tr_func(image_list, label_list):
 
     lab = tf.io.read_file(label_list)
     lab = tf.image.decode_png(lab, 1)
-    lab = tf.image.resize(lab, [FLAGS.img_size, FLAGS.img_size], tf.image.ResizeMethod.NEAREST_NEIGHBOR)
+    lab = tf.image.resize(lab, [FLAGS.img_size, FLAGS.img_size], method=tf.image.ResizeMethod.NEAREST_NEIGHBOR)
     lab = tf.image.convert_image_dtype(lab, tf.uint8)
 
     return img, lab
 
-#@tf.function    ¿Ã ∫Œ∫–µµ «ÿ∞·«ÿæﬂ«‘!! ±‚æÔ«ÿ!!!!!!!!!!!
+#@tf.function
 def run_model(model, images, training=True):
     return model(images, training=training)
 
@@ -88,9 +90,9 @@ def main():
                     train_lab_dataset.append(FLAGS.label_path + label_dataset[j])
 
         for epoch in range(FLAGS.epochs):
-            A = list(zip(train_img_dataset, train_lab_dataset))
-            shuffle(A)
-            train_img_dataset, train_lab_dataset = zip(*A)
+            #A = list(zip(train_img_dataset, train_lab_dataset))
+            #shuffle(A)
+            #train_img_dataset, train_lab_dataset = zip(*A)
             train_img_dataset, train_lab_dataset = np.array(train_img_dataset), np.array(train_lab_dataset)
 
             train_ge = tf.data.Dataset.from_tensor_slices((train_img_dataset, train_lab_dataset))
@@ -112,14 +114,31 @@ def main():
 
 
                 count += 1
-            #tr_iter = iter(train_ge)
-            #miou = 0.
-            #for i in range(tr_idx): # ≥ª¿œ miou √¯¡§«œ¥¬∞Õ±Ó¡ˆ øœº∫Ω√≈∞±‚! ±‚æÔ«ÿ!!!!!!!!!!!!
-            #    batch_images, batch_labels = next(tr_iter)
-            #    for j in range(FLAGS.batch_size):
-            #        predict = run_model(model, batch_images[j], False)
 
-            #        miou += MIOU(predict, batch_labels[j], )
+            tr_iter = iter(train_ge)
+            miou = 0.
+            for i in range(tr_idx):
+                batch_images, batch_labels = next(tr_iter)
+                batch_labels = tf.squeeze(batch_labels, -1)
+                for j in range(FLAGS.batch_size):
+                    batch_image = tf.expand_dims(batch_images[j], 0)
+                    predict = run_model(model, batch_image, False) # typeÏùÑ batch labelÍ≥º Í∞ôÏùÄ typeÏúºÎ°ú ÎßûÏ∂∞Ï£ºÏñ¥ÏïºÌï®
+                    predict = tf.nn.softmax(predict[0], -1)
+                    predict = tf.argmax(predict, -1, output_type=tf.int32)
+                    predict = tf.cast(predict, tf.uint8)
+                    predict = predict.numpy()
+
+                    batch_label = batch_labels[j].numpy()
+                    b = np.bincount(np.reshape(batch_label, [FLAGS.img_size*FLAGS.img_size,]))
+                    #print(len(b))
+                    miou_ = Measurement(predict=predict, 
+                                       label=batch_label, 
+                                       shape=[FLAGS.img_size*FLAGS.img_size, ], 
+                                       total_classes=FLAGS.total_classes).MIOU()
+                    miou += miou_
+
+            print("Epoch: {}, miou = {}".format(epoch, miou / len(train_img_dataset)))
+
 
 
 
