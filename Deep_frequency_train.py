@@ -1,9 +1,8 @@
 # -*- coding:utf-8 -*-
 from modified_deeplab_V3 import *
 from cal_measurement import Measurement
-from random import random, shuffle
+from random import shuffle
 
-import matplotlib.pyplot as plt
 import numpy as np
 import easydict
 import os
@@ -18,7 +17,9 @@ FLAGS = easydict.EasyDict({"img_size": 513,
                            
                            "pre_checkpoint_path": "",
                            
-                           "lr": 1e-6,
+                           "lr": 0.001,
+
+                           "min_lr": 1e-7,
                            
                            "epochs": 200,
 
@@ -30,15 +31,30 @@ FLAGS = easydict.EasyDict({"img_size": 513,
 
                            "train": True})
 
-optim = tf.keras.optimizers.Adam(FLAGS.lr)
+
+total_step = len(os.listdir(FLAGS.image_path)) // FLAGS.batch_size
+warmup_step = int(total_step * 0.6)
+power = 1.
+
+lr_scheduler = tf.keras.optimizers.schedules.PolynomialDecay(
+    initial_learning_rate = FLAGS.lr,
+    decay_steps = total_step - warmup_step,
+    end_learning_rate = FLAGS.min_lr,
+    power = power
+)
+lr_schedule = LearningRateScheduler(FLAGS.lr, warmup_step, lr_scheduler)
+
+optim = tf.keras.optimizers.Adam(lr_schedule)
+
 # pretrained 모델을 사용해보자
 # https://github.com/tensorflow/models/blob/master/research/deeplab/g3doc/model_zoo.md
-
+# https://github.com/srihari-humbarwadi/DeepLabV3_Plus-Tensorflow2.0
+# https://www.youtube.com/watch?v=kgkyu7LpBaM
 def tr_func(image_list, label_list):
 
     img = tf.io.read_file(image_list)
     img = tf.image.decode_png(img, 3)
-    img = tf.image.resize(img, [FLAGS.img_size, FLAGS.img_size])
+    img = tf.image.resize(img, [FLAGS.img_size, FLAGS.img_size], method=tf.image.ResizeMethod.NEAREST_NEIGHBOR)
     img = tf.image.per_image_standardization(img)
 
     lab = tf.io.read_file(label_list)
@@ -48,15 +64,19 @@ def tr_func(image_list, label_list):
 
     return img, lab
 
-#@tf.function
+@tf.function
 def run_model(model, images, training=True):
     return model(images, training=training)
 
-def cal_loss(model, images, labels):
+def cal_loss(model, images, labels, ignore_count):
 
     with tf.GradientTape() as tape:
         logits = run_model(model, images, True)
-        loss = tf.keras.losses.CategoricalCrossentropy(from_logits=True)(labels, logits)
+        loss = tf.keras.losses.CategoricalCrossentropy(from_logits=True, 
+                                                       reduction=tf.keras.losses.Reduction.NONE)(labels, logits)
+        loss = tf.reduce_sum(loss, [1,2]) / ignore_count
+        loss = tf.reduce_mean(loss)
+        
 
     grads = tape.gradient(loss, model.trainable_variables)
     optim.apply_gradients(zip(grads, model.trainable_variables))
@@ -64,7 +84,15 @@ def cal_loss(model, images, labels):
     return loss
 
 def main():
+    #model = DeepLabV3Plus(FLAGS.img_size, FLAGS.img_size, FLAGS.total_classes-1)
     model = Deep_edge_network(input_shape=(FLAGS.img_size,FLAGS.img_size,3), num_classes=FLAGS.total_classes-1)
+    for layer in model.layers:
+        if isinstance(layer, tf.keras.layers.BatchNormalization):
+            layer.momentum = 0.9997
+            layer.epsilon = 1e-5
+        elif isinstance(layer, tf.keras.layers.Conv2D):
+            layer.kernel_regularizer = tf.keras.regularizers.l2(1e-4)
+
     model.summary()
 
     if FLAGS.pre_checkpoint:
@@ -74,7 +102,7 @@ def main():
         if ckpt_manager.latest_checkpoint:
             ckpt.restore(ckpt_manager.latest_checkpoint)
             print("Restored!!")
-
+    tf.keras.applications
     if FLAGS.train:
         count = 0
 
@@ -90,9 +118,9 @@ def main():
                     train_lab_dataset.append(FLAGS.label_path + label_dataset[j])
 
         for epoch in range(FLAGS.epochs):
-            #A = list(zip(train_img_dataset, train_lab_dataset))
-            #shuffle(A)
-            #train_img_dataset, train_lab_dataset = zip(*A)
+            A = list(zip(train_img_dataset, train_lab_dataset))
+            shuffle(A)
+            train_img_dataset, train_lab_dataset = zip(*A)
             train_img_dataset, train_lab_dataset = np.array(train_img_dataset), np.array(train_lab_dataset)
 
             train_ge = tf.data.Dataset.from_tensor_slices((train_img_dataset, train_lab_dataset))
@@ -105,10 +133,18 @@ def main():
             tr_idx = len(train_img_dataset) // FLAGS.batch_size
             for step in range(tr_idx):
                 batch_images, batch_labels = next(tr_iter)
-                batch_labels = tf.where(batch_labels == FLAGS.ignore_label, 255, batch_labels)
+                batch_labels = tf.squeeze(batch_labels, -1)
+                #batch_labels = tf.where(batch_labels == FLAGS.ignore_label, 255, batch_labels) # void를 255로 할시
+                ignore_count = tf.reshape(batch_labels, [FLAGS.batch_size,FLAGS.img_size*FLAGS.img_size,])
+                ignore_count_buf = []
+                for b in range(FLAGS.batch_size):
+                    ignore_c = np.bincount(ignore_count[b].numpy(), minlength=FLAGS.total_classes)
+                    ignore_count_buf.append(np.sum(ignore_c) - ignore_c[-1])
+
+                ignore_count_buf = tf.convert_to_tensor(ignore_count_buf, dtype=tf.float32)
+
                 batch_labels = tf.one_hot(batch_labels, FLAGS.total_classes - 1)
-                batch_labels = tf.squeeze(batch_labels, -2)
-                loss = cal_loss(model, batch_images, batch_labels)
+                loss = cal_loss(model, batch_images, batch_labels, ignore_count_buf)
                 if count % 10 == 0:
                     print("Epoch: {} [{}/{}] loss = {}".format(epoch, step+1, tr_idx, loss))
 
