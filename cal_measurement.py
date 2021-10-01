@@ -52,7 +52,9 @@ class Measurement:
 #        #plt.imshow(img, cmap="gray")
 #        #plt.show()
 #        img = img.numpy()
-#        img = np.array(img, dtype=np.int32)
+#        a = np.reshape(img, [513*513, ])
+#        print(np.max(a))
+#        img = np.array(img, dtype=np.int32) # void클래스가 정말 12 인지 확인해봐야함
 #        #img = np.where(img == 0, 255, img)
 
 #        b = np.bincount(np.reshape(img, [img.shape[0]*img.shape[1],]))
