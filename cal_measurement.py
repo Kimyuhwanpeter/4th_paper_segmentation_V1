@@ -20,12 +20,16 @@ class Measurement:
         label_count = np.bincount(self.label, minlength=self.total_classes)
         label_count = np.delete(label_count, -1)  # delete last label (void class)
 
-        temp = self.total_classes * np.array(self.label, dtype="int") + np.array(self.predict, dtype="int")  # Get category metrics
+        label_ = self.label[self.label != 11]   # 11은 void 클래스
+        skip_label_index = np.where(self.label==11) # ==> (array([], dtype),) ==> 그렇기 때문에 앞에 [0]을 해주어야 array([], dtype)이 됨
+        predict_ = np.delete(self.predict, [ skip_label_index[0] ])
+        #######################################################################################################################
+        temp = (self.total_classes - 1) * np.array(label_, dtype="int") + np.array(predict_, dtype="int")  # Get category metrics
     
-        temp_count = np.bincount(temp, minlength=self.total_classes*self.total_classes)
-        cm = np.reshape(temp_count, [self.total_classes, self.total_classes])
+        temp_count = np.bincount(temp, minlength=(self.total_classes - 1)*(self.total_classes - 1))
+        cm = np.reshape(temp_count, [self.total_classes-1, self.total_classes-1])
         cm = np.diag(cm)
-        cm = np.delete(cm, -1)   # delete last label (void class)
+        #cm = np.delete(cm, -1)   # delete last label (void class)
     
         U = label_count + predict_count - cm
 
