@@ -3,6 +3,13 @@ import tensorflow as tf
 import numpy as np
 import os
 
+# 안녕하세요!! 지난번에 이어서 좋은 글 잘 읽었습니다. mIoU 계산시에, true label에서는 등장하지 않고 predict label에서는 등장하는 label의 경우는 iou를 0으로 두고 계산을 해주나요?
+# 안녕하세요.네 맞습니다. 간단히 교집합이 없으니 0이 되는 원리 입니다. true label에는 없으나 predict에만 존재한다는 것 자체가 성능이 나쁜것이니 0에 수렴해야 하는 논리와 동일합니다.
+
+# 저 위의 논리대라면, 나누
+# 아!!! predict한 이미지에 void부분을 11로 만들고! miou를 구할 때, void클래스 빈도수는 제외하고 진행하면 되지 않을까? 기억해!!!!! 지금생각났음!!!!!!!!!!!!!
+# 왜냐면! 어차피 predict와 label 위치에 같은 값이 동일하게 있다면 confusion metrice 할때 중앙성분만있음! 그렇기에 cm을 구한 뒤 대각성분을 추출한 뒤 맨 뒤에있는 void라벨을 제거하면 됨! 오키!! 내일 다시한번더 생각천천히해봐!!!기억해 꼭해!!!!!!!!!!!
+
 class Measurement:
     def __init__(self, predict, label, shape, total_classes=96):
         self.predict = predict
@@ -16,28 +23,36 @@ class Measurement:
         self.label = np.reshape(self.label, self.shape)
 
         predict_count = np.bincount(self.predict, minlength=self.total_classes)
-        predict_count = np.delete(predict_count, -1) # delete last label (void class)
         label_count = np.bincount(self.label, minlength=self.total_classes)
-        label_count = np.delete(label_count, -1)  # delete last label (void class)
-
-        label_ = self.label[self.label != 11]   # 11은 void 클래스
-        skip_label_index = np.where(self.label==11) # ==> (array([], dtype),) ==> 그렇기 때문에 앞에 [0]을 해주어야 array([], dtype)이 됨
-        predict_ = np.delete(self.predict, [ skip_label_index[0] ])
-        #######################################################################################################################
-        temp = (self.total_classes - 1) * np.array(label_, dtype="int") + np.array(predict_, dtype="int")  # Get category metrics
+         
+        temp = self.total_classes * np.array(self.label, dtype="int") + np.array(self.predict, dtype="int")  # Get category metrics
     
-        temp_count = np.bincount(temp, minlength=(self.total_classes - 1)*(self.total_classes - 1))
-        cm = np.reshape(temp_count, [self.total_classes-1, self.total_classes-1])
+        temp_count = np.bincount(temp, minlength=self.total_classes*self.total_classes)
+        cm = np.reshape(temp_count, [self.total_classes, self.total_classes])
         cm = np.diag(cm)
-        #cm = np.delete(cm, -1)   # delete last label (void class)
     
         U = label_count + predict_count - cm
+        U = np.delete(U, -1)    # delete last label (void class)
+        cm_ = np.delete(cm, -1)
 
-        miou = cm / U
+        miou = cm_ / U
         miou = np.nanmean(miou)
 
         return miou
 
+
+class UpdatedMeanIoU(tf.keras.metrics.MeanIoU):
+  def __init__(self,
+               y_true=None,
+               y_pred=None,
+               num_classes=None,
+               name=None,
+               dtype=None):
+    super(UpdatedMeanIoU, self).__init__(num_classes = num_classes,name=name, dtype=dtype)
+
+  def update_state(self, y_true, y_pred, sample_weight=None):
+    y_pred = tf.math.argmax(y_pred, axis=-1)
+    return super().update_state(y_true, y_pred, sample_weight)
 
 #import matplotlib.pyplot as plt
 
