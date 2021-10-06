@@ -190,8 +190,8 @@ def main():
                     predict = predict.numpy()
 
                     batch_label = tf.cast(batch_labels[j], tf.uint8).numpy()
-                    ignore_label_axis = np.where(batch_label==11)   # 출력은 x,y axis로 나옴!
-                    predict[ignore_label_axis] = 11 # 이거 내일 테스트해봐야함!! 기억해!!
+                    ignore_label_axis = np.where(batch_label==FLAGS.ignore_label)   # 출력은 x,y axis로 나옴!
+                    predict[ignore_label_axis] = FLAGS.ignore_label # 이거 내일 테스트해봐야함!! 기억해!!
 
                     miou_ = Measurement(predict=predict, 
                                        label=batch_label, 
