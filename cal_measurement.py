@@ -3,13 +3,6 @@ import tensorflow as tf
 import numpy as np
 import os
 
-# 안녕하세요!! 지난번에 이어서 좋은 글 잘 읽었습니다. mIoU 계산시에, true label에서는 등장하지 않고 predict label에서는 등장하는 label의 경우는 iou를 0으로 두고 계산을 해주나요?
-# 안녕하세요.네 맞습니다. 간단히 교집합이 없으니 0이 되는 원리 입니다. true label에는 없으나 predict에만 존재한다는 것 자체가 성능이 나쁜것이니 0에 수렴해야 하는 논리와 동일합니다.
-
-# 저 위의 논리대라면, 나누
-# 아!!! predict한 이미지에 void부분을 11로 만들고! miou를 구할 때, void클래스 빈도수는 제외하고 진행하면 되지 않을까? 기억해!!!!! 지금생각났음!!!!!!!!!!!!!
-# 왜냐면! 어차피 predict와 label 위치에 같은 값이 동일하게 있다면 confusion metrice 할때 중앙성분만있음! 그렇기에 cm을 구한 뒤 대각성분을 추출한 뒤 맨 뒤에있는 void라벨을 제거하면 됨! 오키!! 내일 다시한번더 생각천천히해봐!!!기억해 꼭해!!!!!!!!!!!
-
 class Measurement:
     def __init__(self, predict, label, shape, total_classes=96):
         self.predict = predict
@@ -35,7 +28,8 @@ class Measurement:
         U = np.delete(U, -1)    # delete last label (void class)
         cm_ = np.delete(cm, -1)
 
-        miou = cm_ / U
+        out = np.zeros((self.total_classes-1))
+        miou = np.divide(cm_, U, out=out, where=U != 0)
         miou = np.nanmean(miou)
 
         return miou
